@@ -1,0 +1,205 @@
+{
+  "MaxDailyWork": "08:00:00",
+  "MaxAmplitude": "12:00:00",
+  "MinAgentRest": "00:30:00",
+  "MinBusTurnaround": "00:15:00",
+  "MaxTripsPerAgentPerDay": 6,
+  "MaxBusKmPerDay": 500,
+  "RestSaturation": "04:00:00",
+  "Constraints": {
+    "B02": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B03": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B10": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B09": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B05": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B11": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "B06": {
+      "Mode": "Hard",
+      "Weight": 25
+    },
+    "B07": {
+      "Mode": "Soft",
+      "Weight": 40
+    },
+    "B08": {
+      "Mode": "Soft",
+      "Weight": 25
+    },
+    "BP03": {
+      "Mode": "Soft",
+      "Weight": 25
+    },
+    "BP04": {
+      "Mode": "Soft",
+      "Weight": 20
+    },
+    "BP05": {
+      "Mode": "Soft",
+      "Weight": 20
+    },
+    "BP06": {
+      "Mode": "Soft",
+      "Weight": 15
+    },
+    "BP07": {
+      "Mode": "Soft",
+      "Weight": 15
+    },
+    "BP08": {
+      "Mode": "Soft",
+      "Weight": 10
+    },
+    "A05": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A03": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A04": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A07": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A08": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A09": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A10": {
+      "Mode": "Hard",
+      "Weight": 0
+    },
+    "A11": {
+      "Mode": "Soft",
+      "Weight": 40
+    },
+    "A12": {
+      "Mode": "Soft",
+      "Weight": 25
+    },
+    "AP03": {
+      "Mode": "Soft",
+      "Weight": 20
+    },
+    "AP04": {
+      "Mode": "Soft",
+      "Weight": 20
+    },
+    "AP05": {
+      "Mode": "Soft",
+      "Weight": 15
+    },
+    "AP06": {
+      "Mode": "Soft",
+      "Weight": 10
+    }
+  },
+  "CategoryRules": [
+    {
+      "LineTypeId": 1,
+      "AllowedCategoryIds": [
+        1
+      ],
+      "PreferredCategoryIds": [
+        1
+      ]
+    },
+    {
+      "LineTypeId": 2,
+      "AllowedCategoryIds": [
+        2
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 3,
+      "AllowedCategoryIds": [
+        2
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 4,
+      "AllowedCategoryIds": [
+        1
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 6,
+      "AllowedCategoryIds": [
+        7
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 7,
+      "AllowedCategoryIds": [
+        4
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 8,
+      "AllowedCategoryIds": [
+        7
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 9,
+      "AllowedCategoryIds": [
+        7
+      ],
+      "PreferredCategoryIds": []
+    },
+    {
+      "LineTypeId": 11,
+      "AllowedCategoryIds": [
+        3,
+        43
+      ],
+      "PreferredCategoryIds": []
+    }
+  ],
+  "Alns": {
+    "MaxIterations": 3000,
+    "MaxSeconds": 20,
+    "StagnationLimit": 1500,
+    "DestroyFractionMin": 0.05,
+    "DestroyFractionMax": 0.15,
+    "InitialTemperature": 100,
+    "CoolingRate": 0.998,
+    "Seed": 42,
+    "InsertionNoise": 0.1,
+    "UnassignedPenalty": 100000,
+    "FairnessWeight": 10,
+    "ReactionFactor": 0.1
+  }
+}

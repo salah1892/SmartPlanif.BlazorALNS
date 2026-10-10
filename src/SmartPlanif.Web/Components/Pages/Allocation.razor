@@ -1,0 +1,338 @@
+@page "/allocation"
+@using System.Globalization
+@inject AllocateDayHandler AllocateHandler
+@inject PreviewDayHandler PreviewHandler
+
+<PageTitle>Allocation</PageTitle>
+
+<h1>Allocation d'une journée</h1>
+
+<div class="panel">
+    <div class="form-grid compact">
+        <label>Date
+            <input type="date" @bind="_dateInput" disabled="@_running" /></label>
+        <label>Méthode
+            <select @bind="_method" disabled="@_running">
+                @foreach (var method in Enum.GetValues<AllocationMethod>())
+                {
+                    <option value="@method">@MethodLabel(method)</option>
+                }
+            </select></label>
+        <label>Utilisateur
+            <input type="text" @bind="_user" disabled="@_running" /></label>
+        <label class="inline">
+            <input type="checkbox" @bind="_saveProposals" disabled="@_running" />
+            Enregistrer les propositions en base (sinon simple simulation)</label>
+    </div>
+    <div class="toolbar">
+        <button class="btn" @onclick="PreviewAsync" disabled="@_running">Analyser la faisabilité</button>
+        <button class="btn primary" @onclick="RunAsync" disabled="@_running">Lancer l'allocation</button>
+        @if (_running)
+        {
+            <button class="btn danger" @onclick="Cancel">Arrêter</button>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert error">@_error</div>
+}
+
+@if (_running)
+{
+    <div class="alert warn">
+        Calcul en cours…
+        @if (_progress is not null)
+        {
+            <span>
+                itération @_progress.Iteration — meilleur objectif @_progress.BestObjective.ToString("0.#", CultureInfo.InvariantCulture)
+                — voyages non affectés : @_progress.UnassignedInBest — @_progress.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) s
+            </span>
+        }
+    </div>
+}
+
+@if (_preview is not null)
+{
+    <h2>Aperçu de la journée du @_preview.Date.ToString("dd/MM/yyyy")</h2>
+    <p>
+        <strong>@_preview.TripsToAllocate</strong> voyages à affecter, @_preview.LockedTrips déjà affectés (bloquent leurs ressources),
+        @_preview.ActiveBuses bus actifs, @_preview.Drivers chauffeurs, @_preview.Receivers receveurs.
+        Répartition : @string.Join(", ", _preview.LineTypes.Select(t => $"{t.Label} : {t.TripCount}"))
+    </p>
+    @RenderFeasibility(_preview.Feasibility)
+}
+
+@if (_report is not null)
+{
+    <h2>Résultat — @MethodLabel(_report.Method)</h2>
+
+    <div class="kpis">
+        <div class="kpi @(_report.UnassignedCount == 0 ? "good" : "bad")">
+            <span class="value">@_report.AssignedCount / @_report.TotalTrips</span><span>voyages affectés</span>
+        </div>
+        <div class="kpi @(_report.UnassignedCount == 0 ? "good" : "bad")">
+            <span class="value">@_report.UnassignedCount</span><span>non affectés</span>
+        </div>
+        <div class="kpi">
+            <span class="value">@Number(_report.ConstructionObjective) → @Number(_report.FinalObjective)</span><span>objectif (construction → final)</span>
+        </div>
+        <div class="kpi">
+            <span class="value">@_report.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) s</span><span>temps de calcul</span>
+        </div>
+        <div class="kpi @(_report.Violations.Count == 0 ? "good" : "bad")">
+            <span class="value">@(_report.Violations.Count == 0 ? "Valide" : _report.Violations.Count + " violation(s)")</span><span>contrôle indépendant</span>
+        </div>
+    </div>
+
+    @if (_report.ProposalsSaved)
+    {
+        <div class="alert ok">Propositions enregistrées (statut PROPOSED).</div>
+    }
+    @if (_saveRequested && !_report.ProposalsSaved)
+    {
+        <div class="alert warn">Les propositions n'ont pas été enregistrées (aucune affectation, ou plan invalide).</div>
+    }
+
+    <h3>Contraintes appliquées</h3>
+    <p>
+        Dures :
+        @foreach (var constraintCode in _report.HardConstraintCodes)
+        {
+            <span class="badge hard" title="@ConstraintCatalog.DescribeCode(constraintCode)">@constraintCode</span>
+        }
+    </p>
+    <p>
+        Souples :
+        @foreach (var constraintCode in _report.SoftConstraintCodes)
+        {
+            <span class="badge soft" title="@ConstraintCatalog.DescribeCode(constraintCode)">@constraintCode</span>
+        }
+    </p>
+
+    @if (_report.Violations.Count > 0)
+    {
+        <div class="alert error">
+            <strong>Le contrôle indépendant a détecté des violations de règles dures (bug probable) :</strong>
+            <ul>
+                @foreach (var violation in _report.Violations.Take(20))
+                {
+                    <li>Voyage @violation.TripId — @violation.Resource — @ConstraintCatalog.DescribeCode(violation.Code) : @violation.Message</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (_report.Phases.Count > 0)
+    {
+        <h3>Phases de construction (du type de ligne le plus tendu au moins tendu)</h3>
+        <table class="grid">
+            <thead><tr><th>Type de ligne</th><th>Voyages</th><th>Demande simultanée max</th><th>Bus compatibles</th><th>Tension</th><th>Affectés</th></tr></thead>
+            <tbody>
+                @foreach (var phase in _report.Phases)
+                {
+                    <tr class="@(phase.Tension > 1 ? "row-hard" : "")">
+                        <td>@phase.Label</td><td>@phase.TripCount</td><td>@phase.PeakDemand</td><td>@phase.CompatibleBuses</td>
+                        <td>@phase.Tension.ToString("0.00", CultureInfo.InvariantCulture)</td><td>@phase.Assigned / @phase.TripCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (_report.Alns is not null)
+    {
+        <h3>Métaheuristique ALNS</h3>
+        <p>
+            @_report.Alns.Iterations itérations en @_report.Alns.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) s —
+            objectif @Number(_report.Alns.InitialObjective) → @Number(_report.Alns.FinalObjective).
+        </p>
+        <ConvergenceChart Points="_report.Alns.Convergence" />
+        <table class="grid">
+            <thead><tr><th>Opérateur</th><th>Type</th><th>Utilisations</th><th>Récompense cumulée</th><th>Poids final</th></tr></thead>
+            <tbody>
+                @foreach (var op in _report.Alns.Operators)
+                {
+                    <tr>
+                        <td>@op.Name</td><td>@(op.IsDestroy ? "Destruction" : "Réparation")</td><td>@op.Uses</td>
+                        <td>@op.TotalReward.ToString("0.#", CultureInfo.InvariantCulture)</td><td>@op.FinalWeight.ToString("0.00", CultureInfo.InvariantCulture)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (_report.Failures.Count > 0)
+    {
+        <h3>Voyages non affectés (@_report.Failures.Count)</h3>
+        <table class="grid">
+            <thead><tr><th>Départ</th><th>Arrivée</th><th>Ligne</th><th>Ressources manquantes</th><th>Causes de rejet (règle × nombre de ressources)</th></tr></thead>
+            <tbody>
+                @foreach (var failure in _report.Failures)
+                {
+                    <tr class="row-hard">
+                        <td>@failure.Trip.Departure.ToString("HH:mm")</td><td>@failure.Trip.Arrival.ToString("HH:mm")</td>
+                        <td>@failure.Trip.LineLabel</td><td>@string.Join(", ", failure.MissingRoles.Select(RoleLabel))</td>
+                        <td>@Causes(failure)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @RenderFeasibilityIfProblem(_report.Feasibility)
+
+    <h3>Plan d'allocation (@_report.Assignments.Count)</h3>
+    <div class="toolbar">
+        <input type="search" placeholder="Filtrer (ligne, bus, agent)…" @bind="_filter" @bind:event="oninput" />
+    </div>
+    <table class="grid">
+        <thead><tr><th>Départ</th><th>Arrivée</th><th>Ligne</th><th>Bus</th><th>Chauffeur</th><th>Receveur</th><th>Score</th></tr></thead>
+        <tbody>
+            @foreach (var a in FilteredAssignments())
+            {
+                <tr title="@a.Justification">
+                    <td>@a.Trip.Departure.ToString("HH:mm")</td><td>@a.Trip.Arrival.ToString("HH:mm")</td>
+                    <td>@a.Trip.LineLabel</td><td>@a.Bus.Plate</td><td>@a.Driver.Name</td><td>@a.Receiver.Name</td>
+                    <td>
+                        <div class="scorebar" title="@a.Justification">
+                            <div class="fill" style="width:@Percent(a.Score, a.MaxScore)%"></div>
+                            <span>@a.Score.ToString("0.#", CultureInfo.InvariantCulture) / @a.MaxScore.ToString("0.#", CultureInfo.InvariantCulture)</span>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <p class="muted small">Survolez une ligne pour voir la justification du score critère par critère.</p>
+}
+
+@code {
+    private DateTime _dateInput = new(2026, 10, 8);
+    private AllocationMethod _method = AllocationMethod.PhasedConstructionWithAlns;
+    private string _user = "planificateur";
+    private bool _saveProposals;
+    private bool _saveRequested;
+    private bool _running;
+    private string? _error;
+    private string _filter = "";
+    private AlnsProgress? _progress;
+    private AllocationReport? _report;
+    private DayPreview? _preview;
+    private CancellationTokenSource? _cancellation;
+
+    private DateOnly SelectedDate => DateOnly.FromDateTime(_dateInput);
+
+    /// <summary>Phase 0 : volumes et diagnostic de faisabilité, sans rien modifier.</summary>
+    private async Task PreviewAsync()
+    {
+        _error = null;
+        try
+        {
+            _preview = await PreviewHandler.HandleAsync(SelectedDate, null, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = "Analyse impossible : " + ex.Message;
+        }
+    }
+
+    /// <summary>Lance l'allocation ; la métaheuristique tourne sur un fil d'arrière-plan et publie sa progression.</summary>
+    private async Task RunAsync()
+    {
+        _error = null;
+        _report = null;
+        _progress = null;
+        _running = true;
+        _saveRequested = _saveProposals;
+        _cancellation = new CancellationTokenSource();
+        try
+        {
+            var progress = new InlineProgress<AlnsProgress>(p =>
+            {
+                _progress = p;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            var command = new AllocateDayCommand(SelectedDate, _user, _method, _saveProposals);
+            _report = await AllocateHandler.HandleAsync(command, progress, _cancellation.Token);
+        }
+        catch (Exception ex)
+        {
+            _error = "Allocation impossible : " + ex.Message;
+        }
+        finally
+        {
+            _running = false;
+            _cancellation?.Dispose();
+            _cancellation = null;
+        }
+    }
+
+    /// <summary>Arrêt demandé : la recherche rend le meilleur plan trouvé jusque-là.</summary>
+    private void Cancel() => _cancellation?.Cancel();
+
+    private IEnumerable<TripAssignment> FilteredAssignments()
+    {
+        var all = _report!.Assignments;
+        if (string.IsNullOrWhiteSpace(_filter)) return all;
+        var text = _filter.Trim();
+        return all.Where(a =>
+            a.Trip.LineLabel.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || a.Bus.Plate.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || a.Driver.Name.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || a.Receiver.Name.Contains(text, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private RenderFragment RenderFeasibility(IReadOnlyList<FeasibilityLine> lines) => __builder =>
+    {
+        <table class="grid">
+            <thead><tr><th>Ressource</th><th>Demande minimale</th><th>Disponible</th><th>Diagnostic</th></tr></thead>
+            <tbody>
+                @foreach (var line in lines)
+                {
+                    <tr class="@(line.IsSufficient ? "" : "row-hard")">
+                        <td>@line.Scope</td><td>@line.Demand</td><td>@line.Supply</td><td>@line.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    /// <summary>Affiche le diagnostic seulement s'il révèle une pénurie : c'est souvent la vraie cause des voyages non affectés.</summary>
+    private RenderFragment RenderFeasibilityIfProblem(IReadOnlyList<FeasibilityLine> lines) => __builder =>
+    {
+        if (lines.Any(l => !l.IsSufficient))
+        {
+            <h3>Pénuries détectées avant l'allocation</h3>
+            <p class="muted">Ces ressources sont insuffisantes quelle que soit la méthode : il faut en ajouter ou assouplir une contrainte.</p>
+            @RenderFeasibility(lines.Where(l => !l.IsSufficient).ToList())
+        }
+    };
+
+    private static string Causes(UnassignedTrip failure) =>
+        failure.RejectionsByCode.Count == 0
+            ? "Aucune ressource de ce rôle n'existe dans le parc."
+            : string.Join(" ; ", failure.RejectionsByCode.OrderByDescending(x => x.Value)
+                .Select(x => $"{ConstraintCatalog.DescribeCode(x.Key)} × {x.Value}"));
+
+    private static string RoleLabel(string role) => role switch
+    {
+        "BUS" => "bus",
+        "DRIVER" => "chauffeur",
+        "RECEIVER" => "receveur",
+        _ => role,
+    };
+
+    private static string MethodLabel(AllocationMethod method) => method switch
+    {
+        AllocationMethod.GreedyChronological => "1. Glouton chronologique (référence)",
+        AllocationMethod.PhasedConstruction => "2. Construction par phases (types de ligne)",
+        _ => "3. Construction par phases + ALNS (recommandé)",
+    };
+
+    private static string Number(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static string Percent(double score, double max) =>
+        (max <= 0 ? 0 : Math.Clamp(score / max * 100, 0, 100)).ToString("0", CultureInfo.InvariantCulture);
+}

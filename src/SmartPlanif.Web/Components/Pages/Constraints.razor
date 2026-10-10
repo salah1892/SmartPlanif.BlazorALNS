@@ -1,0 +1,160 @@
+@page "/constraints"
+@using System.Globalization
+@inject AllocationSettingsService SettingsService
+
+<PageTitle>Contraintes</PageTitle>
+
+<h1>Contraintes d'allocation</h1>
+<p class="muted">
+    <span class="hard-text">Dure</span> : une ressource qui viole la règle est éliminée, quel que soit son score.
+    <span class="soft-text">Souple</span> : la règle ajoute des points (poids × valeur entre 0 et 1) pour départager les ressources valides.
+    Les règles marquées 🔒 sont des impossibilités physiques et ne sont pas modifiables.
+</p>
+
+@if (_policy is null)
+{
+    <p>Chargement…</p>
+}
+else
+{
+    <div class="toolbar">
+        <span class="badge hard">@CountOf(ConstraintMode.Hard) dures</span>
+        <span class="badge soft">@CountOf(ConstraintMode.Soft) souples</span>
+        <span class="badge off">@CountOf(ConstraintMode.Disabled) désactivées</span>
+        <span class="muted">Score maximal par voyage : <strong>@MaxScore.ToString("0.#", CultureInfo.InvariantCulture)</strong></span>
+        <span class="spacer"></span>
+        <button class="btn primary" @onclick="SaveAsync">Enregistrer</button>
+        <button class="btn" @onclick="ResetAsync">Valeurs par défaut</button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="alert @(_success ? "ok" : "error")">@_message</div>
+    }
+    @if (_errors.Count > 0)
+    {
+        <div class="alert error">
+            <ul>
+                @foreach (var error in _errors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @foreach (var target in new[] { ConstraintTarget.Bus, ConstraintTarget.Agent })
+    {
+        <h2>@(target == ConstraintTarget.Bus ? "Bus" : "Chauffeurs et receveurs")</h2>
+        <table class="grid">
+            <thead>
+                <tr><th>Code</th><th>Contrainte</th><th>Traitement</th><th>Poids (souple)</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var descriptor in ConstraintCatalog.AllDescriptors.Where(d => d.Target == target))
+                {
+                    var setting = _policy.Constraints[descriptor.Code];
+                    <tr class="@RowClass(setting.Mode)">
+                        <td><code>@descriptor.Code</code></td>
+                        <td>
+                            <strong>@descriptor.Name</strong>
+                            @if (descriptor.IsLocked)
+                            {
+                                <span title="Non modifiable">🔒</span>
+                            }
+                            <div class="muted small">@descriptor.Description</div>
+                        </td>
+                        <td class="modes">
+                            @foreach (var mode in descriptor.SupportedModes)
+                            {
+                                var currentMode = mode;
+                                <label class="mode @ModeCss(currentMode)">
+                                    <input type="radio" name="@("mode-" + descriptor.Code)"
+                                           checked="@(setting.Mode == currentMode)"
+                                           disabled="@descriptor.IsLocked"
+                                           @onchange="() => SetMode(descriptor.Code, currentMode)" />
+                                    @ModeLabel(currentMode)
+                                </label>
+                            }
+                        </td>
+                        <td>
+                            <input type="number" class="weight" min="0" step="1"
+                                   value="@FormatWeight(setting.Weight)"
+                                   disabled="@(descriptor.IsLocked || setting.Mode != ConstraintMode.Soft)"
+                                   @onchange="e => SetWeight(descriptor.Code, e.Value?.ToString())" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private AllocationPolicy? _policy;
+    private string? _message;
+    private bool _success;
+    private IReadOnlyList<string> _errors = Array.Empty<string>();
+
+    /// <summary>Score maximal d'un voyage avec les choix en cours (somme des poids des critères souples actifs).</summary>
+    private double MaxScore => _policy is null ? 0 : new TripAllocator(_policy).MaxScorePerTrip;
+
+    protected override async Task OnInitializedAsync() => _policy = await SettingsService.LoadAsync();
+
+    private int CountOf(ConstraintMode mode) => _policy!.Constraints.Values.Count(s => s.Mode == mode);
+
+    /// <summary>Change le traitement d'une contrainte ; un passage en mode souple garantit un poids non nul.</summary>
+    private void SetMode(string code, ConstraintMode mode)
+    {
+        var setting = _policy!.Constraints[code];
+        setting.Mode = mode;
+        if (mode == ConstraintMode.Soft && setting.Weight <= 0)
+        {
+            var defaultWeight = ConstraintCatalog.FindDescriptor(code)?.DefaultWeight ?? 0;
+            setting.Weight = defaultWeight > 0 ? defaultWeight : 10;
+        }
+        _message = null;
+    }
+
+    private void SetWeight(string code, string? text)
+    {
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var weight) && weight >= 0)
+            _policy!.Constraints[code].Weight = weight;
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        var result = await SettingsService.SaveAsync(_policy!);
+        _success = result.Success;
+        _errors = result.Errors;
+        _message = result.Success ? "Contraintes enregistrées." : "Enregistrement refusé : corrigez les erreurs ci-dessous.";
+    }
+
+    private async Task ResetAsync()
+    {
+        await SettingsService.ResetAsync();
+        _policy = await SettingsService.LoadAsync();
+        _errors = Array.Empty<string>();
+        _success = true;
+        _message = "Valeurs par défaut restaurées.";
+    }
+
+    private static string FormatWeight(double weight) => weight.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string ModeLabel(ConstraintMode mode) => mode switch
+    {
+        ConstraintMode.Disabled => "Désactivée",
+        ConstraintMode.Hard => "Dure",
+        _ => "Souple",
+    };
+
+    private static string ModeCss(ConstraintMode mode) => mode switch
+    {
+        ConstraintMode.Disabled => "off",
+        ConstraintMode.Hard => "hard",
+        _ => "soft",
+    };
+
+    private static string RowClass(ConstraintMode mode) => "row-" + ModeCss(mode);
+}

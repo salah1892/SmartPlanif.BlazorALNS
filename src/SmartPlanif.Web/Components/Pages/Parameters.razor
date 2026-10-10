@@ -1,0 +1,141 @@
+@page "/parameters"
+@inject AllocationSettingsService SettingsService
+
+<PageTitle>Paramètres</PageTitle>
+
+<h1>Paramètres métier et métaheuristique</h1>
+<p class="muted">
+    Ces valeurs alimentent les règles (par exemple « heures maximales par jour » utilise la durée ci-dessous).
+    Elles doivent être validées avec la société de transport.
+</p>
+
+@if (_policy is null)
+{
+    <p>Chargement…</p>
+}
+else
+{
+    <div class="toolbar">
+        <button class="btn primary" @onclick="SaveAsync">Enregistrer</button>
+        <button class="btn" @onclick="ResetAsync">Valeurs par défaut</button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="alert @(_success ? "ok" : "error")">@_message</div>
+    }
+    @if (_errors.Count > 0)
+    {
+        <div class="alert error">
+            <ul>
+                @foreach (var error in _errors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <h2>Limites métier</h2>
+    <div class="form-grid">
+        <label>Durée de travail maximale par jour (heures) <small>A08</small>
+            <input type="number" step="any" min="0" @bind="MaxDailyWorkHours" /></label>
+        <label>Amplitude maximale (heures) <small>A10</small>
+            <input type="number" step="any" min="0" @bind="MaxAmplitudeHours" /></label>
+        <label>Repos minimal d'un agent entre deux voyages (minutes) <small>A07</small>
+            <input type="number" step="any" min="0" @bind="MinAgentRestMinutes" /></label>
+        <label>Remise en service d'un bus entre deux voyages (minutes) <small>B09</small>
+            <input type="number" step="any" min="0" @bind="MinBusTurnaroundMinutes" /></label>
+        <label>Nombre maximal de voyages par agent et par jour <small>A09</small>
+            <input type="number" step="1" min="1" @bind="_policy.MaxTripsPerAgentPerDay" /></label>
+        <label>Kilomètres maximaux par bus et par jour <small>B11</small>
+            <input type="number" step="any" min="0" @bind="_policy.MaxBusKmPerDay" /></label>
+        <label>Repos « saturé » pour le critère AP03 (heures)
+            <input type="number" step="any" min="0" @bind="RestSaturationHours" /></label>
+    </div>
+
+    <h2>Métaheuristique ALNS + recuit simulé</h2>
+    <div class="form-grid">
+        <label>Itérations maximales
+            <input type="number" step="1" min="0" @bind="_policy.Alns.MaxIterations" /></label>
+        <label>Durée maximale (secondes)
+            <input type="number" step="any" min="0" @bind="_policy.Alns.MaxSeconds" /></label>
+        <label>Arrêt après N itérations sans amélioration
+            <input type="number" step="1" min="1" @bind="_policy.Alns.StagnationLimit" /></label>
+        <label>Part détruite — minimum (0 à 1)
+            <input type="number" step="any" min="0" max="1" @bind="_policy.Alns.DestroyFractionMin" /></label>
+        <label>Part détruite — maximum (0 à 1)
+            <input type="number" step="any" min="0" max="1" @bind="_policy.Alns.DestroyFractionMax" /></label>
+        <label>Température initiale
+            <input type="number" step="any" min="0" @bind="_policy.Alns.InitialTemperature" /></label>
+        <label>Facteur de refroidissement (0 à 1)
+            <input type="number" step="any" min="0" max="1" @bind="_policy.Alns.CoolingRate" /></label>
+        <label>Graine aléatoire (résultat reproductible)
+            <input type="number" step="1" @bind="_policy.Alns.Seed" /></label>
+        <label>Bruit d'insertion (0 à 1)
+            <input type="number" step="any" min="0" max="1" @bind="_policy.Alns.InsertionNoise" /></label>
+        <label>Pénalité par voyage non affecté
+            <input type="number" step="any" min="0" @bind="_policy.Alns.UnassignedPenalty" /></label>
+        <label>Poids de l'équité de charge
+            <input type="number" step="any" min="0" @bind="_policy.Alns.FairnessWeight" /></label>
+        <label>Vitesse d'adaptation des opérateurs (0 à 1)
+            <input type="number" step="any" min="0" max="1" @bind="_policy.Alns.ReactionFactor" /></label>
+    </div>
+}
+
+@code {
+    private AllocationPolicy? _policy;
+    private string? _message;
+    private bool _success;
+    private IReadOnlyList<string> _errors = Array.Empty<string>();
+
+    // Les durées sont stockées en TimeSpan ; l'interface les manipule en heures ou en minutes.
+    private double MaxDailyWorkHours
+    {
+        get => _policy!.MaxDailyWork.TotalHours;
+        set => _policy!.MaxDailyWork = TimeSpan.FromHours(value);
+    }
+
+    private double MaxAmplitudeHours
+    {
+        get => _policy!.MaxAmplitude.TotalHours;
+        set => _policy!.MaxAmplitude = TimeSpan.FromHours(value);
+    }
+
+    private double MinAgentRestMinutes
+    {
+        get => _policy!.MinAgentRest.TotalMinutes;
+        set => _policy!.MinAgentRest = TimeSpan.FromMinutes(value);
+    }
+
+    private double MinBusTurnaroundMinutes
+    {
+        get => _policy!.MinBusTurnaround.TotalMinutes;
+        set => _policy!.MinBusTurnaround = TimeSpan.FromMinutes(value);
+    }
+
+    private double RestSaturationHours
+    {
+        get => _policy!.RestSaturation.TotalHours;
+        set => _policy!.RestSaturation = TimeSpan.FromHours(value);
+    }
+
+    protected override async Task OnInitializedAsync() => _policy = await SettingsService.LoadAsync();
+
+    private async Task SaveAsync()
+    {
+        var result = await SettingsService.SaveAsync(_policy!);
+        _success = result.Success;
+        _errors = result.Errors;
+        _message = result.Success ? "Paramètres enregistrés." : "Enregistrement refusé : corrigez les erreurs ci-dessous.";
+    }
+
+    private async Task ResetAsync()
+    {
+        await SettingsService.ResetAsync();
+        _policy = await SettingsService.LoadAsync();
+        _errors = Array.Empty<string>();
+        _success = true;
+        _message = "Valeurs par défaut restaurées.";
+    }
+}

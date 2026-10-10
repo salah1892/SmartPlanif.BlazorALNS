@@ -1,0 +1,49 @@
+@using System.Globalization
+
+@* Courbe de convergence de l'ALNS : meilleure valeur de l'objectif en fonction de l'itération. *@
+<svg viewBox="0 0 620 240" class="chart" role="img" aria-label="Courbe de convergence de la métaheuristique">
+    <line x1="60" y1="200" x2="600" y2="200" stroke="#999" />
+    <line x1="60" y1="15" x2="60" y2="200" stroke="#999" />
+    <polyline fill="none" stroke="#1f6f8b" stroke-width="2" points="@_polyline" />
+    <text x="62" y="12" class="axis">@Format(_max)</text>
+    <text x="62" y="214" class="axis">@Format(_min)</text>
+    <text x="60" y="232" class="axis">itération 0</text>
+    <text x="600" y="232" class="axis" text-anchor="end">itération @_lastIteration</text>
+</svg>
+
+@code {
+    private const double Left = 60, Right = 600, Top = 15, Bottom = 200;
+
+    private double _min;
+    private double _max;
+    private int _lastIteration = 1;
+    private string _polyline = "";
+
+    /// <summary>Points de la courbe (itération, meilleur objectif).</summary>
+    [Parameter] public IReadOnlyList<ConvergencePoint> Points { get; set; } = Array.Empty<ConvergencePoint>();
+
+    /// <summary>Recalcule les coordonnées SVG à chaque changement de paramètre (axe vertical : plus bas = meilleur objectif).</summary>
+    protected override void OnParametersSet()
+    {
+        if (Points.Count == 0)
+        {
+            _polyline = "";
+            return;
+        }
+
+        _min = Points.Min(p => p.BestObjective);
+        _max = Points.Max(p => p.BestObjective);
+        _lastIteration = Math.Max(1, Points.Max(p => p.Iteration));
+        var range = _max - _min;
+
+        var coordinates = Points.Select(p =>
+        {
+            var x = Left + (Right - Left) * p.Iteration / _lastIteration;
+            var y = range <= 0 ? (Top + Bottom) / 2 : Bottom - (Bottom - Top) * (p.BestObjective - _min) / range;
+            return string.Create(CultureInfo.InvariantCulture, $"{x:0.##},{y:0.##}");
+        });
+        _polyline = string.Join(" ", coordinates);
+    }
+
+    private static string Format(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

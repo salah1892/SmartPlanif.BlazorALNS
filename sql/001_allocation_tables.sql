@@ -1,0 +1,39 @@
+-- Nouvelles tables nécessaires à l'allocation (MySQL 8.x, base Transport_Ai)
+
+-- 1) Affectations : historique, score, justification.
+--    ACTIVE_TRIP_ID + index unique = un seul état "actif" par voyage (protège contre deux allocations concurrentes).
+CREATE TABLE trip_assignments (
+  ID             BIGINT AUTO_INCREMENT PRIMARY KEY,
+  TRIP_ID        BIGINT NOT NULL,
+  BUS_ID         BIGINT NOT NULL,
+  DRIVER_ID      BIGINT NOT NULL,
+  RECEIVER_ID    BIGINT NOT NULL,
+  STATUS         VARCHAR(20) NOT NULL,   -- PROPOSED, VALIDATED, MODIFIED, CANCELLED, REALIZED, REPLACED
+  SCORE          DECIMAL(10,2),
+  JUSTIFICATION  TEXT,
+  ASSIGNED_AT    DATETIME NOT NULL,
+  ASSIGNED_BY    VARCHAR(100),
+  ACTIVE_TRIP_ID BIGINT GENERATED ALWAYS AS
+      (CASE WHEN STATUS IN ('PROPOSED','VALIDATED','MODIFIED') THEN TRIP_ID END) STORED,
+  UNIQUE KEY UX_ACTIVE_TRIP (ACTIVE_TRIP_ID),
+  KEY IX_TA_BUS (BUS_ID), KEY IX_TA_DRIVER (DRIVER_ID), KEY IX_TA_RECEIVER (RECEIVER_ID),
+  CONSTRAINT FK_TA_TRIP     FOREIGN KEY (TRIP_ID)     REFERENCES trips (ID),
+  CONSTRAINT FK_TA_BUS      FOREIGN KEY (BUS_ID)      REFERENCES drvehic (DECODVH),
+  CONSTRAINT FK_TA_DRIVER   FOREIGN KEY (DRIVER_ID)   REFERENCES dragent (DECAGEN),
+  CONSTRAINT FK_TA_RECEIVER FOREIGN KEY (RECEIVER_ID) REFERENCES dragent (DECAGEN)
+);
+
+-- 2) Indisponibilités : congés, absences, suspensions (agents) et maintenance (bus).
+CREATE TABLE resource_unavailability (
+  ID          BIGINT AUTO_INCREMENT PRIMARY KEY,
+  KIND        ENUM('BUS','AGENT') NOT NULL,
+  RESOURCE_ID BIGINT NOT NULL,          -- drvehic.DECODVH ou dragent.DECAGEN selon KIND
+  START_AT    DATETIME NOT NULL,
+  END_AT      DATETIME NOT NULL,
+  REASON      VARCHAR(100),
+  KEY IX_RU_LOOKUP (KIND, RESOURCE_ID, START_AT),
+  CHECK (END_AT > START_AT)
+);
+
+-- Index utile pour charger les voyages d'une journée
+-- CREATE INDEX IDX_TRIPS_TIME_DEPART ON trips (TIME_DEPART);

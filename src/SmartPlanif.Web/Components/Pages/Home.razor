@@ -1,0 +1,42 @@
+@page "/"
+@inject DataSourceInfo DataSource
+
+<PageTitle>SmartPlanif</PageTitle>
+
+<h1>SmartPlanif — Allocation des ressources</h1>
+<p class="lead">
+    Affectation des bus, chauffeurs et receveurs aux voyages, avec des <strong>règles dures</strong> (éliminatoires)
+    et des <strong>règles souples</strong> (pondérées dans un score), puis amélioration par métaheuristique.
+</p>
+
+<div class="alert @(DataSource.IsDemo ? "warn" : "ok")">
+    Source de données : <strong>@DataSource.Description</strong>
+</div>
+
+<h2>Marche à suivre</h2>
+<ol class="steps">
+    <li><a href="constraints">Contraintes</a> : pour chaque règle, choisir <em>désactivée</em>, <span class="hard-text">dure</span> ou <span class="soft-text">souple</span> (avec son poids).</li>
+    <li><a href="line-types">Types de ligne</a> : définir quelles catégories de bus sont autorisées ou préférées pour chaque type de ligne (ex. confort pour l'interurbain).</li>
+    <li><a href="parameters">Paramètres</a> : limites métier (8 h, repos minimal...) et réglages de la métaheuristique.</li>
+    <li><a href="allocation">Allocation</a> : analyser la faisabilité d'une journée, lancer l'allocation, consulter le plan et les causes d'échec.</li>
+</ol>
+
+<h2>Principe de l'algorithme</h2>
+<div class="cards">
+    <div class="card">
+        <h3>1. Diagnostic</h3>
+        <p>Compare la demande maximale simultanée aux ressources disponibles : si elles sont insuffisantes, aucune méthode ne pourra tout planifier.</p>
+    </div>
+    <div class="card">
+        <h3>2. Construction</h3>
+        <p>Les types de ligne sont traités du plus tendu au moins tendu ; dans chaque lot, les voyages les plus contraints passent en premier.</p>
+    </div>
+    <div class="card">
+        <h3>3. Amélioration (ALNS)</h3>
+        <p>On détruit une partie du plan puis on le répare, en n'acceptant que des plans respectant toutes les règles dures (recuit simulé).</p>
+    </div>
+    <div class="card">
+        <h3>4. Contrôle</h3>
+        <p>Un validateur indépendant rejoue toutes les règles dures sur le plan final. Un plan invalide n'est jamais enregistré.</p>
+    </div>
+</div>

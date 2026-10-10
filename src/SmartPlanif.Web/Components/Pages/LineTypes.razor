@@ -1,0 +1,141 @@
+@page "/line-types"
+@inject AllocationSettingsService SettingsService
+@inject IReferenceDataRepository Reference
+
+<PageTitle>Types de ligne</PageTitle>
+
+<h1>Types de ligne et catégories de bus</h1>
+<p class="muted">
+    Pour chaque type de ligne, cochez les catégories de bus <strong>autorisées</strong> (utilisées par la contrainte B06)
+    et celles <strong>préférées</strong> (critère BP03, évite de gaspiller les bus confort sur les lignes courtes).
+    Aucune case « autorisée » cochée = aucune restriction pour ce type de ligne.
+    Le mode dur ou souple de B06 se règle dans la page « Contraintes ».
+</p>
+
+@if (_policy is null)
+{
+    <p>Chargement…</p>
+}
+else
+{
+    <div class="toolbar">
+        <button class="btn primary" @onclick="SaveAsync">Enregistrer</button>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="alert @(_success ? "ok" : "error")">@_message</div>
+    }
+
+    <table class="grid">
+        <thead>
+            <tr><th>Type de ligne</th><th>Catégories autorisées</th><th>Catégories préférées</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var lineType in _lineTypes)
+            {
+                <tr>
+                    <td><strong>@lineType.Label</strong></td>
+                    <td>
+                        @foreach (var category in _categories)
+                        {
+                            <label class="chk">
+                                <input type="checkbox" checked="@IsAllowed(lineType.Id, category.Id)"
+                                       @onchange="e => ToggleAllowed(lineType.Id, category.Id, IsChecked(e))" />
+                                @category.Label
+                            </label>
+                        }
+                    </td>
+                    <td>
+                        @foreach (var category in _categories)
+                        {
+                            <label class="chk">
+                                <input type="checkbox" checked="@IsPreferred(lineType.Id, category.Id)"
+                                       @onchange="e => TogglePreferred(lineType.Id, category.Id, IsChecked(e))" />
+                                @category.Label
+                            </label>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private AllocationPolicy? _policy;
+    private IReadOnlyList<ReferenceItem> _lineTypes = Array.Empty<ReferenceItem>();
+    private IReadOnlyList<ReferenceItem> _categories = Array.Empty<ReferenceItem>();
+    private string? _message;
+    private bool _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lineTypes = await Reference.GetLineTypesAsync(CancellationToken.None);
+        _categories = await Reference.GetBusCategoriesAsync(CancellationToken.None);
+        _policy = await SettingsService.LoadAsync();
+    }
+
+    private static bool IsChecked(ChangeEventArgs e) => e.Value is bool value && value;
+
+    private LineTypeCategoryRule? FindRule(long lineTypeId) => _policy!.CategoryRules.FirstOrDefault(r => r.LineTypeId == lineTypeId);
+
+    private bool IsAllowed(long lineTypeId, long categoryId) => FindRule(lineTypeId)?.AllowedCategoryIds.Contains(categoryId) ?? false;
+
+    private bool IsPreferred(long lineTypeId, long categoryId) => FindRule(lineTypeId)?.PreferredCategoryIds.Contains(categoryId) ?? false;
+
+    /// <summary>Retrouve ou crée la règle d'un type de ligne.</summary>
+    private LineTypeCategoryRule GetOrCreateRule(long lineTypeId)
+    {
+        var rule = FindRule(lineTypeId);
+        if (rule is null)
+        {
+            rule = new LineTypeCategoryRule { LineTypeId = lineTypeId };
+            _policy!.CategoryRules.Add(rule);
+        }
+        return rule;
+    }
+
+    /// <summary>Décocher « autorisée » retire aussi la préférence (une catégorie interdite ne peut pas être préférée).</summary>
+    private void ToggleAllowed(long lineTypeId, long categoryId, bool isChecked)
+    {
+        var rule = GetOrCreateRule(lineTypeId);
+        if (isChecked)
+        {
+            if (!rule.AllowedCategoryIds.Contains(categoryId)) rule.AllowedCategoryIds.Add(categoryId);
+        }
+        else
+        {
+            rule.AllowedCategoryIds.Remove(categoryId);
+            rule.PreferredCategoryIds.Remove(categoryId);
+        }
+        _message = null;
+    }
+
+    /// <summary>Préférer une catégorie ne crée pas de restriction : elle n'est ajoutée aux autorisées que si une restriction existe déjà.</summary>
+    private void TogglePreferred(long lineTypeId, long categoryId, bool isChecked)
+    {
+        var rule = GetOrCreateRule(lineTypeId);
+        if (isChecked)
+        {
+            if (!rule.PreferredCategoryIds.Contains(categoryId)) rule.PreferredCategoryIds.Add(categoryId);
+            if (rule.AllowedCategoryIds.Count > 0 && !rule.AllowedCategoryIds.Contains(categoryId))
+                rule.AllowedCategoryIds.Add(categoryId);
+        }
+        else
+        {
+            rule.PreferredCategoryIds.Remove(categoryId);
+        }
+        _message = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        // Les règles entièrement vides n'apportent rien : on ne les enregistre pas.
+        _policy!.CategoryRules.RemoveAll(r => r.AllowedCategoryIds.Count == 0 && r.PreferredCategoryIds.Count == 0);
+
+        var result = await SettingsService.SaveAsync(_policy);
+        _success = result.Success;
+        _message = result.Success ? "Règles de compatibilité enregistrées." : string.Join(" ", result.Errors);
+    }
+}
